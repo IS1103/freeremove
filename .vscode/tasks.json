@@ -19,8 +19,11 @@
         "clear": false
       },
       "problemMatcher": [],
-      "runOptions": {
-        "runOn": "folderOpen"
+      "options": {
+        "shell": {
+          "executable": "powershell.exe",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
+        }
       }
     },
     {
@@ -35,7 +38,13 @@
         "focus": false,
         "panel": "new"
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "options": {
+        "shell": {
+          "executable": "powershell.exe",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
+        }
+      }
     },
     {
       "label": "程式碼檢查",
@@ -49,7 +58,13 @@
         "focus": false,
         "panel": "new"
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "options": {
+        "shell": {
+          "executable": "powershell.exe",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
+        }
+      }
     },
     {
       "label": "安裝依賴",
@@ -63,7 +78,13 @@
         "focus": false,
         "panel": "new"
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "options": {
+        "shell": {
+          "executable": "powershell.exe",
+          "args": ["-NoProfile", "-ExecutionPolicy", "Bypass"]
+        }
+      }
     }
   ]
 } 
