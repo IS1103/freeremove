@@ -100,7 +100,7 @@ export default function BackgroundRemover() {
     // 清除 canvas
     ctx.clearRect(0, 0, displayWidth, displayHeight);
     
-    // 繪製原圖（不包含選區邊框）
+    // 繪製原圖
     ctx.drawImage(originalImage, 0, 0, displayWidth, displayHeight);
   }, [originalImage]);
 
@@ -180,12 +180,8 @@ export default function BackgroundRemover() {
   const handleReset = useCallback(() => {
     setProcessedImage(null);
     setCurrentMask(null);
-    if (originalImage && canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d')!;
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      ctx.drawImage(originalImage, 0, 0);
-    }
-  }, [originalImage]);
+    updateDisplay();
+  }, [updateDisplay]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
@@ -330,9 +326,11 @@ export default function BackgroundRemover() {
 
             {/* 圖片顯示區域 */}
             <div className="space-y-4">
-              {/* 原圖區塊 */}
+              {/* 選取部分區塊 */}
               <div className="bg-gray-800 rounded-lg p-4">
-                <h3 className="text-lg font-semibold mb-4">原圖</h3>
+                <h3 className="text-lg font-semibold mb-4">
+                  {currentMask ? '選取的部分' : '原圖'}
+                </h3>
                 <div className="relative">
                   <canvas
                     ref={canvasRef}
@@ -341,19 +339,12 @@ export default function BackgroundRemover() {
                       selectedTool === 'magicWand' ? 'cursor-crosshair' : 'cursor-pointer'
                     }`}
                   />
-                  {selectedTool === 'magicWand' && (
+                  {selectedTool === 'magicWand' && !currentMask && (
                     <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
                       點擊選擇區域
                     </div>
                   )}
-                </div>
-              </div>
-
-              {/* 選取部分區塊 */}
-              {currentMask && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-4">選取的部分</h3>
-                  <div className="relative">
+                  {currentMask && (
                     <canvas
                       ref={(canvas) => {
                         if (canvas && originalImage && currentMask) {
@@ -509,11 +500,11 @@ export default function BackgroundRemover() {
                           }
                         }
                       }}
-                      className="border-2 border-gray-600 rounded-lg max-w-full"
+                      className="absolute inset-0 border-2 border-gray-600 rounded-lg max-w-full"
                     />
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}
