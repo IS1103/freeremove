@@ -13,6 +13,8 @@ export default function BackgroundRemover() {
   const [selectedColor, setSelectedColor] = useState<[number, number, number]>([255, 255, 255]);
   const [imageData, setImageData] = useState<ImageData | null>(null);
   const [currentMask, setCurrentMask] = useState<ImageData | null>(null);
+  const [isMultiSelect] = useState(true);
+  const [selectedAreas, setSelectedAreas] = useState<ImageData[]>([]);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,10 +42,7 @@ export default function BackgroundRemover() {
   }, []);
 
   // 處理圖片上傳
-  const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const handleImageUpload = useCallback((file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -69,6 +68,30 @@ export default function BackgroundRemover() {
       img.src = e.target?.result as string;
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  // 處理檔案輸入上傳
+  const handleFileInputUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    handleImageUpload(file);
+  }, [handleImageUpload]);
+
+  // 處理拖放上傳
+  const handleDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = event.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      if (file.type.startsWith('image/')) {
+        handleImageUpload(file);
+      }
+    }
+  }, [handleImageUpload]);
+
+  // 處理拖放預覽
+  const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
   }, []);
 
   // 更新顯示
@@ -109,6 +132,28 @@ export default function BackgroundRemover() {
     updateDisplay();
   }, [updateDisplay]);
 
+  // 合併多個選區
+  const mergeMasks = useCallback((masks: ImageData[]): ImageData => {
+    if (masks.length === 0) return new ImageData(1, 1);
+    
+    const width = masks[0].width;
+    const height = masks[0].height;
+    const mergedMask = new ImageData(width, height);
+    
+    for (let i = 0; i < mergedMask.data.length; i += 4) {
+      let maxValue = 0;
+      for (const mask of masks) {
+        maxValue = Math.max(maxValue, mask.data[i]);
+      }
+      mergedMask.data[i] = maxValue;     // R
+      mergedMask.data[i + 1] = maxValue; // G
+      mergedMask.data[i + 2] = maxValue; // B
+      mergedMask.data[i + 3] = maxValue; // A
+    }
+    
+    return mergedMask;
+  }, []);
+
   // 處理魔術棒點擊
   const handleCanvasClick = useCallback((event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!imageData || !originalImage) return;
@@ -137,10 +182,27 @@ export default function BackgroundRemover() {
       // 使用 Web Worker 來避免阻塞主執行緒
       setTimeout(() => {
         const mask = imageProcessor.current.magicWand(imageData, x, y, tolerance);
-        setCurrentMask(mask);
         
-        const result = imageProcessor.current.postprocess(originalImage, mask, tolerance / 255, blurRadius);
-        setProcessedImage(result);
+        if (isMultiSelect) {
+          // 多選模式：添加到選區列表
+          const newSelectedAreas = [...selectedAreas, mask];
+          setSelectedAreas(newSelectedAreas);
+          
+          // 合併所有選區
+          const mergedMask = mergeMasks(newSelectedAreas);
+          setCurrentMask(mergedMask);
+          
+          const result = imageProcessor.current.postprocess(originalImage, mergedMask, tolerance / 255, blurRadius);
+          setProcessedImage(result);
+        } else {
+          // 單選模式：直接使用新選區
+          setSelectedAreas([mask]);
+          setCurrentMask(mask);
+          
+          const result = imageProcessor.current.postprocess(originalImage, mask, tolerance / 255, blurRadius);
+          setProcessedImage(result);
+        }
+        
         setIsProcessing(false);
       }, 0);
     } else if (selectedTool === 'colorPicker') {
@@ -151,7 +213,7 @@ export default function BackgroundRemover() {
       const b = imageData.data[pixelIndex + 2];
       setSelectedColor([r, g, b]);
     }
-  }, [imageData, originalImage, selectedTool, tolerance, blurRadius]);
+  }, [imageData, originalImage, selectedTool, tolerance, blurRadius, isMultiSelect, selectedAreas, mergeMasks]);
 
   // 處理顏色選擇器
   const handleColorPicker = useCallback(() => {
@@ -180,6 +242,7 @@ export default function BackgroundRemover() {
   const handleReset = useCallback(() => {
     setProcessedImage(null);
     setCurrentMask(null);
+    setSelectedAreas([]);
     updateDisplay();
   }, [updateDisplay]);
 
@@ -188,146 +251,42 @@ export default function BackgroundRemover() {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-4xl font-bold text-center mb-8">AI 去背工具</h1>
         
-        {/* 上傳區域 */}
-        <div className="mb-8">
-          <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold"
+        {/* 上傳區域 - 只在沒有圖片時顯示 */}
+        {!originalImage && (
+          <div className="mb-8">
+            <div 
+              className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center hover:border-gray-500 transition-colors"
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
             >
-              選擇圖片
-            </button>
-            <p className="mt-2 text-gray-400">支援 JPG、PNG 格式</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileInputUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold"
+              >
+                選擇圖片
+              </button>
+              <p className="mt-2 text-gray-400">支援 JPG、PNG 格式</p>
+              <p className="mt-1 text-gray-500 text-sm">或直接拖放圖片到此處</p>
+            </div>
           </div>
-        </div>
+        )}
 
         {originalImage && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* 工具控制面板 */}
-            <div className="space-y-6">
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h3 className="text-xl font-semibold mb-4">工具選擇</h3>
-                
-                {/* 工具選擇 */}
-                <div className="flex space-x-4 mb-6">
-                  <button
-                    onClick={() => setSelectedTool('magicWand')}
-                    className={`px-4 py-2 rounded-lg font-medium ${
-                      selectedTool === 'magicWand'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    魔術棒
-                  </button>
-                  <button
-                    onClick={() => setSelectedTool('colorPicker')}
-                    className={`px-4 py-2 rounded-lg font-medium ${
-                      selectedTool === 'colorPicker'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    滴水工具
-                  </button>
-                </div>
-
-                {/* 容差調整 */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium mb-2">
-                    容差: {tolerance}
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={tolerance}
-                    onChange={(e) => setTolerance(Number(e.target.value))}
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* 模糊強度調整 */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium mb-2">
-                    模糊強度: {blurRadius}
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={blurRadius}
-                    onChange={(e) => setBlurRadius(Number(e.target.value))}
-                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                  />
-                </div>
-
-                {/* 顏色選擇器（滴水工具） */}
-                {selectedTool === 'colorPicker' && (
-                  <div className="mb-6">
-                    <label className="block text-sm font-medium mb-2">選擇顏色</label>
-                    <div className="flex items-center space-x-4">
-                      <div
-                        className="w-12 h-12 rounded-lg border-2 border-gray-600"
-                        style={{
-                          backgroundColor: `rgb(${selectedColor[0]}, ${selectedColor[1]}, ${selectedColor[2]})`
-                        }}
-                      />
-                      <button
-                        onClick={handleColorPicker}
-                        disabled={isProcessing}
-                        className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded-lg font-medium"
-                      >
-                        {isProcessing ? '處理中...' : '應用顏色選擇'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 操作按鈕 */}
-                <div className="flex space-x-4">
-                  <button
-                    onClick={handleReset}
-                    className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium"
-                  >
-                    重置
-                  </button>
-                  {processedImage && (
-                    <button
-                      onClick={handleDownload}
-                      className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium"
-                    >
-                      下載結果
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 使用說明 */}
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h3 className="text-xl font-semibold mb-4">使用說明</h3>
-                <div className="space-y-2 text-sm text-gray-300">
-                  <p><strong>魔術棒：</strong>點擊圖片上要刪除的區域，會自動選取相似顏色的區域</p>
-                  <p><strong>滴水工具：</strong>點擊圖片來選擇要刪除的顏色，然後點擊「應用顏色選擇」</p>
-                  <p><strong>容差：</strong>調整顏色匹配的寬鬆程度，數值越大選擇範圍越廣</p>
-                  <p><strong>模糊強度：</strong>調整最終圖片的模糊程度，讓邊緣更自然</p>
-                  <p><strong>選區顯示：</strong>綠色虛線顯示當前選中的區域</p>
-                  <p><strong>注意：</strong>選取的部分會被刪除（變透明），未選取的部分會保留</p>
-                </div>
-              </div>
-            </div>
-
+          <div className="space-y-8">
             {/* 圖片顯示區域 */}
-            <div className="space-y-4">
-              {/* 選取部分區塊 */}
-              <div className="bg-gray-800 rounded-lg p-4">
+            <div className="flex justify-center">
+              <div 
+                className="bg-gray-800 rounded-lg p-4 max-w-4xl"
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+              >
                 <h3 className="text-lg font-semibold mb-4">
                   {currentMask ? '選取的部分' : '原圖'}
                 </h3>
@@ -335,9 +294,7 @@ export default function BackgroundRemover() {
                   <canvas
                     ref={canvasRef}
                     onClick={handleCanvasClick}
-                    className={`border-2 border-gray-600 rounded-lg max-w-full ${
-                      selectedTool === 'magicWand' ? 'cursor-crosshair' : 'cursor-pointer'
-                    }`}
+                    className="border-2 border-gray-600 rounded-lg max-w-full cursor-crosshair"
                   />
                   {selectedTool === 'magicWand' && !currentMask && (
                     <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
@@ -500,12 +457,127 @@ export default function BackgroundRemover() {
                           }
                         }
                       }}
+                      onClick={handleCanvasClick}
                       className="absolute inset-0 border-2 border-gray-600 rounded-lg max-w-full"
                     />
                   )}
                 </div>
               </div>
             </div>
+
+            {/* 工具控制面板 */}
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-xl font-semibold mb-4">工具選擇</h3>
+              
+                                {/* 工具選擇 */}
+                  <div className="flex space-x-4 mb-6">
+                    <button
+                      onClick={() => setSelectedTool('magicWand')}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        selectedTool === 'magicWand'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      魔術棒
+                    </button>
+                    <button
+                      onClick={() => setSelectedTool('colorPicker')}
+                      className={`px-4 py-2 rounded-lg font-medium ${
+                        selectedTool === 'colorPicker'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      滴水工具
+                    </button>
+                  </div>
+
+
+
+              {/* 容差調整 */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">
+                  容差: {tolerance}
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={tolerance}
+                  onChange={(e) => setTolerance(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* 模糊強度調整 */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-2">
+                  模糊強度: {blurRadius}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="20"
+                  value={blurRadius}
+                  onChange={(e) => setBlurRadius(Number(e.target.value))}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              {/* 顏色選擇器（滴水工具） */}
+              {selectedTool === 'colorPicker' && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium mb-2">選擇顏色</label>
+                  <div className="flex items-center space-x-4">
+                    <div
+                      className="w-12 h-12 rounded-lg border-2 border-gray-600"
+                      style={{
+                        backgroundColor: `rgb(${selectedColor[0]}, ${selectedColor[1]}, ${selectedColor[2]})`
+                      }}
+                    />
+                    <button
+                      onClick={handleColorPicker}
+                      disabled={isProcessing}
+                      className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded-lg font-medium"
+                    >
+                      {isProcessing ? '處理中...' : '應用顏色選擇'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 操作按鈕 */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={handleReset}
+                  className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg font-medium"
+                >
+                  重置
+                </button>
+                {processedImage && (
+                  <button
+                    onClick={handleDownload}
+                    className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg font-medium"
+                  >
+                    下載結果
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 使用說明 */}
+                          <div className="bg-gray-800 rounded-lg p-6">
+                <h3 className="text-xl font-semibold mb-4">使用說明</h3>
+                <div className="space-y-2 text-sm text-gray-300">
+                  <p><strong>魔術棒：</strong>點擊圖片上要刪除的區域，會自動選取相似顏色的區域，支援多選</p>
+                  <p><strong>滴水工具：</strong>點擊圖片來選擇要刪除的顏色，然後點擊「應用顏色選擇」</p>
+                  <p><strong>容差：</strong>調整顏色匹配的寬鬆程度，數值越大選擇範圍越廣</p>
+                  <p><strong>模糊強度：</strong>調整最終圖片的模糊程度，讓邊緣更自然</p>
+                  <p><strong>選區顯示：</strong>綠色虛線顯示當前選中的區域</p>
+                  <p><strong>注意：</strong>選取的部分會被刪除（變透明），未選取的部分會保留</p>
+                </div>
+              </div>
           </div>
         )}
       </div>
