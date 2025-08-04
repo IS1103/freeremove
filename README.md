@@ -4,7 +4,7 @@ An intelligent image background removal tool built with Next.js, featuring magic
 
 ## Live Demo
 
-**Try it now:** [https://freeremove.onrender.com/](https://freeremove.onrender.com/)
+[Demo](https://freeremove.vercel.app/)
 
 ## Features
 
